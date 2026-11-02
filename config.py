@@ -3,6 +3,7 @@ import os
 class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-only-change-me")
     JWT_SECRET = os.getenv("JWT_SECRET")
+    JWT_LIFETIME_SECONDS = int(os.getenv("JWT_LIFETIME_SECONDS", "60"))
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
 class DevelopmentConfig(Config):

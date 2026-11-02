@@ -12,6 +12,7 @@ config_classes = {
     "production": "config.ProductionConfig",
 }
 
+
 def create_app(config_name=None):
     if config_name is None:
         config_name = os.getenv("APP_ENV", "development")
@@ -27,15 +28,9 @@ def create_app(config_name=None):
     db.init_app(app)
     migrate.init_app(app, db)
 
+    from . import models
     from .main import main_bp
+
     app.register_blueprint(main_bp)
 
     return app
-
-
-
-
-
-
-
-
