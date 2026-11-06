@@ -6,3 +6,4 @@ Flask-Caching
 PyJWT
 Flask-Limiter==4.1.1
 psycopg[binary]
+gunicorn
