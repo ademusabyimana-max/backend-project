@@ -33,4 +33,7 @@ def create_app(config_name=None):
 
     app.register_blueprint(main_bp)
 
+    @app.route("/health", methods=["GET"])
+    def health():
+        return {"status": "ok"}, 200
     return app
