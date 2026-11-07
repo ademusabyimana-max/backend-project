@@ -10,4 +10,4 @@ COPY . .
 
 EXPOSE 5002
 
-CMD ["sh", "-c", "gunicorn run_dev:app --bind 0.0.0.0:${PORT:-5002} --workers 2"]
+CMD ["sh", "-c", "python -m flask --app run_dev db upgrade && gunicorn run_dev:app --bind 0.0.0.0:${PORT:-5002} --workers 2"]
