@@ -25,6 +25,16 @@ def create_app(config_name=None):
 
     app.config.from_object(config_path)
 
+    if config_name.lower() == "production":
+        if not app.config.get("SQLALCHEMY_DATABASE_URI"):
+            raise RuntimeError("DATABASE_URL must be set in production.")
+
+        if not app.config.get("SECRET_KEY"):
+            raise RuntimeError("SECRET_KEY must be set in production.")
+
+        if not app.config.get("JWT_SECRET"):
+            raise RuntimeError("JWT_SECRET must be set in production.")
+
     db.init_app(app)
     migrate.init_app(app, db)
 
@@ -36,4 +46,5 @@ def create_app(config_name=None):
     @app.route("/health", methods=["GET"])
     def health():
         return {"status": "ok"}, 200
+
     return app
