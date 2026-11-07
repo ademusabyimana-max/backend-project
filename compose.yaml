@@ -1,0 +1,11 @@
+services:
+  web:
+    build: .
+    ports:
+      - "5002:5002"
+    environment:
+      APP_ENV: production
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in your host environment or .env file}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in your host environment or .env file}
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL to your live database address}
+    restart: unless-stopped

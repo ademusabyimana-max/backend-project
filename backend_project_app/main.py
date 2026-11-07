@@ -1,53 +1,21 @@
 from datetime import datetime, timedelta, timezone
 
 import jwt
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy.exc import IntegrityError
 
 from .extensions import db
-from .models import User
+from .models import User, Record
+from .auth import login_required, require_record_owner
 
 main_bp = Blueprint("main", __name__)
 
 
 @main_bp.route("/me", methods=["GET"])
+@login_required
 def get_profile():
-    auth_header = request.headers.get("Authorization", "")
-
-    if not auth_header.startswith("Bearer "):
-        return jsonify({"error": {
-            "code": "MISSING_TOKEN",
-            "message": "Authorization token required"
-        }}), 401
-
-    token = auth_header.split(" ", 1)[1]
-
-    try:
-        payload = jwt.decode(
-            token,
-            current_app.config["JWT_SECRET"],
-            algorithms=["HS256"]
-        )
-    except jwt.ExpiredSignatureError:
-        return jsonify({"error": {
-            "code": "TOKEN_EXPIRED",
-            "message": "Token expired"
-        }}), 401
-    except jwt.InvalidTokenError:
-        return jsonify({"error": {
-            "code": "INVALID_TOKEN",
-            "message": "Invalid token"
-        }}), 401
-
-    user = db.session.get(User, int(payload["sub"]))
-
-    if user is None:
-        return jsonify({"error": {
-            "code": "USER_NOT_FOUND",
-            "message": "User not found"
-        }}), 404
-
+    user = g.current_user
     return jsonify({
         "id": user.id,
         "username": user.username,
@@ -216,3 +184,94 @@ def login():
         "token_type": "Bearer",
         "expires_in": token_lifetime
     }), 200
+
+
+# Private-record endpoints demonstrate per-user authorization.
+@main_bp.route("/records", methods=["GET"])
+@login_required
+def list_records():
+    records = Record.query.filter_by(owner_id=g.current_user.id).order_by(Record.id.asc()).all()
+    return jsonify([record_to_dict(record) for record in records]), 200
+
+
+@main_bp.route("/records", methods=["POST"])
+@login_required
+def create_record():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": {"code": "INVALID_JSON", "message": "A JSON object is required."}}), 400
+
+    title = data.get("title")
+    content = data.get("content", "")
+    if not isinstance(title, str) or not title.strip():
+        return jsonify({"error": {"code": "TITLE_REQUIRED", "message": "A title is required."}}), 400
+    if not isinstance(content, str):
+        return jsonify({"error": {"code": "INVALID_CONTENT", "message": "Content must be a string."}}), 400
+
+    # Ownership comes from the verified token, never from client-supplied owner_id.
+    record = Record(title=title.strip(), content=content, owner_id=g.current_user.id)
+    db.session.add(record)
+    db.session.commit()
+    return jsonify(record_to_dict(record)), 201
+
+
+@main_bp.route("/records/<int:record_id>", methods=["GET"])
+@login_required
+def get_record(record_id):
+    record = db.session.get(Record, record_id)
+    if record is None:
+        return jsonify({"error": {"code": "NOT_FOUND", "message": "Record not found."}}), 404
+    denied = require_record_owner(record)
+    if denied:
+        return denied
+    return jsonify(record_to_dict(record)), 200
+
+
+@main_bp.route("/records/<int:record_id>", methods=["PUT"])
+@login_required
+def update_record(record_id):
+    record = db.session.get(Record, record_id)
+    if record is None:
+        return jsonify({"error": {"code": "NOT_FOUND", "message": "Record not found."}}), 404
+    denied = require_record_owner(record)
+    if denied:
+        return denied
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": {"code": "INVALID_JSON", "message": "A JSON object is required."}}), 400
+    if "title" in data:
+        if not isinstance(data["title"], str) or not data["title"].strip():
+            return jsonify({"error": {"code": "INVALID_TITLE", "message": "Title must be a non-empty string."}}), 400
+        record.title = data["title"].strip()
+    if "content" in data:
+        if not isinstance(data["content"], str):
+            return jsonify({"error": {"code": "INVALID_CONTENT", "message": "Content must be a string."}}), 400
+        record.content = data["content"]
+
+    db.session.commit()
+    return jsonify(record_to_dict(record)), 200
+
+
+@main_bp.route("/records/<int:record_id>", methods=["DELETE"])
+@login_required
+def delete_record(record_id):
+    record = db.session.get(Record, record_id)
+    if record is None:
+        return jsonify({"error": {"code": "NOT_FOUND", "message": "Record not found."}}), 404
+    denied = require_record_owner(record)
+    if denied:
+        return denied
+    db.session.delete(record)
+    db.session.commit()
+    return "", 204
+
+
+def record_to_dict(record):
+    return {
+        "id": record.id,
+        "title": record.title,
+        "content": record.content,
+        "owner_id": record.owner_id,
+        "created_at": record.created_at.isoformat()
+    }
